@@ -13,7 +13,7 @@ jobs:
         with:
           kernel-url: https://github.com/PainKiller3/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
-          config: xiaomi/silvercore_defconfig
+          config: vendor/xiaomi/silvercore_defconfig
           arch: arm64
           aosp-gcc: true
           aosp-clang: false
