@@ -17,5 +17,5 @@ jobs:
           arch: arm64
           aosp-gcc: true
           aosp-clang: false
-          other-clang-url: https://github.com/kdrag0n/proton-clang
+          other-clang-url: https://github.com/kdrag0n/proton-clang.git
           ksu-version: true
