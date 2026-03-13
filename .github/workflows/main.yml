@@ -19,4 +19,6 @@ jobs:
           aosp-clang: false
           other-clang-url: https://github.com/kdrag0n/proton-clang.git
           other-clang-branch: master
-          ksu-version: true
+          ksu: true
+          ksu-version: v0.9.5
+          anykernel3: true
