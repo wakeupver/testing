@@ -21,5 +21,5 @@ jobs:
           other-clang-branch: master
           ksu: true
           ksu-other: true
-          ksu-url: https://github.com/KernelSU-Next/KernelSU-Next/tree/legacy_susfs/
+          ksu-url: https://github.com/KernelSU-Next/KernelSU-Next/tree/legacy_susfs
           anykernel3: true
