@@ -17,5 +17,5 @@ jobs:
           arch: arm64
           aosp-gcc: true
           aosp-clang: true
-          aosp-clang-version: r450784
+          aosp-clang-version: r450784d
           ksu-version: true
