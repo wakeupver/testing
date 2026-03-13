@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Build
-        uses: wakeupver/kernel_build_action@main
+        uses: dabao/kernel_build_action@main
         with:
           kernel-url: https://github.com/PainKiller3/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
