@@ -18,5 +18,4 @@ jobs:
           aosp-gcc: true
           aosp-clang: true
           aosp-clang-version: r450784
-          ccache: true
           ksu-version: true
