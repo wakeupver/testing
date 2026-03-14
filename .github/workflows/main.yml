@@ -11,7 +11,7 @@ jobs:
       - name: Build
         uses: wakeupver/kernel_build_action@main
         with:
-          kernel-url: https://github.com/wakeupver/Silvercore_kernel_xiaomi_sdm845
+          kernel-url: https://github.com/PainKiller3/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
           config: vendor/xiaomi/silvercore_defconfig
           arch: arm64
