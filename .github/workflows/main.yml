@@ -20,7 +20,7 @@ jobs:
           other-clang-url: https://github.com/kdrag0n/proton-clang.git
           other-clang-branch: master
           ksu: true
-          ksu-version: legacy
+          ksu-version: legacy-susfs
           ksu-other: true
           ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
           anykernel3: true
