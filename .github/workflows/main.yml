@@ -21,5 +21,6 @@ jobs:
           other-clang-branch: master
           ksu: true
           ksu-other: true
+          ksu-version: legacy
           ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
           anykernel3: true
