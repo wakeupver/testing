@@ -21,6 +21,5 @@ jobs:
           other-clang-branch: master
           ksu: true
           ksu-other: true
-          ksu-version: legacy
-          ksu-url: https://github.com/wakeupver/KernelSU-Next
+          ksu-url: https://github.com/ReSukiSU/ReSukiSU
           anykernel3: true
