@@ -22,5 +22,5 @@ jobs:
           ksu: true
           ksu-other: true
           ksu-version: legacy
-          ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
+          ksu-url: https://github.com/wakeupver/KernelSU-Next
           anykernel3: true
