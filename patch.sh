@@ -9,6 +9,8 @@ patch_files=(
     fs/open.c
     fs/read_write.c
     fs/stat.c
+    drivers/input/input.c
+    drivers/tty/pty.c
     kernel/reboot.c
 )
 
@@ -100,6 +102,53 @@ for i in "${patch_files[@]}"; do
             echo "[+] Count: $(grep -c "ksu_handle_stat" "fs/stat.c")"
         else
             echo "[-] fs/stat.c patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+
+    # drivers/ changes
+    ## input/input.c
+    # Required for safemode detection — tanpa ini module selalu dianggap disabled
+    drivers/input/input.c)
+        echo "======================================"
+
+        if grep -q "ksu_handle_input_handle_event" "drivers/kernelsu/ksud.c" >/dev/null 2>&1; then
+            sed -i '/^void input_event(struct input_dev \*dev,/i\#ifdef CONFIG_KSU\nextern bool ksu_input_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_input_handle_event(\n\t\t\tunsigned int *type, unsigned int *code, int *value);\n#endif' drivers/input/input.c
+            sed -i '0,/if (is_event_supported(type, dev->evbit, EV_MAX)) {/{s/if (is_event_supported(type, dev->evbit, EV_MAX)) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(\&type, \&code, \&value);\n#endif\n\tif (is_event_supported(type, dev->evbit, EV_MAX)) {/}' drivers/input/input.c
+
+            if grep -q "ksu_handle_input_handle_event" "drivers/input/input.c"; then
+                echo "[+] drivers/input/input.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_input_handle_event" "drivers/input/input.c")"
+            else
+                echo "[-] drivers/input/input.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] KernelSU have no ksu_input_hook, Skipped."
+        fi
+
+        echo "======================================"
+        ;;
+
+    ## tty/pty.c
+    # Required for devpts/overlayfs module mounting — kritis di kernel 3.x/4.4/4.9
+    drivers/tty/pty.c)
+        echo "======================================"
+
+        if grep -q "ksu_handle_devpts" "kernel/sucompat.c" >/dev/null 2>&1; then
+            echo "[+] Checked ksu_handle_devpts existed in KernelSU!"
+
+            sed -i '/^static struct tty_struct \*pts_unix98_lookup(struct tty_driver \*driver,/i\#ifdef CONFIG_KSU\nextern int ksu_handle_devpts(struct inode*);\n#endif\n' drivers/tty/pty.c
+            sed -i '0,/struct tty_struct \*tty;/{s/struct tty_struct \*tty;/&\n#ifdef CONFIG_KSU\n\tksu_handle_devpts((struct inode *)file->f_path.dentry->d_inode);\n#endif/}' drivers/tty/pty.c
+
+            if grep -q "ksu_handle_devpts" "drivers/tty/pty.c"; then
+                echo "[+] drivers/tty/pty.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_devpts" "drivers/tty/pty.c")"
+            else
+                echo "[-] drivers/tty/pty.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] KernelSU have no devpts, Skipped."
         fi
 
         echo "======================================"
