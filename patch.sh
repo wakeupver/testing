@@ -1,262 +1,294 @@
 #!/bin/bash
-# KernelSU-Next Kernel Source Patches
-# Official Reference: https://kernelsu-next.github.io/webpage/pages/how-to-integrate-for-non-gki.html
-# Patches for non-GKI kernel integration
-# Compatible with kernel versions: 4.4, 4.9, 4.14, 4.19, 5.4 and later
+# Patches author: backslashxx @ Github
+# Shell authon: JackA1ltman <cs2dtzq@163.com>
+# Tested kernel versions: 5.4, 4.19, 4.14, 4.9, 4.4, 3.18
+# 20250309
 
-set -e
+patch_files=(
+    fs/exec.c
+    fs/open.c
+    fs/read_write.c
+    fs/stat.c
+    fs/namei.c
+    drivers/input/input.c
+    drivers/tty/pty.c
+    security/security.c
+    security/selinux/hooks.c
+    kernel/reboot.c
+    kernel/sys.c
+)
 
-PATCH_VERSION="1.0-next"
-COLOR_RED='\033[0;31m'
-COLOR_GREEN='\033[0;32m'
-COLOR_YELLOW='\033[1;33m'
-COLOR_NC='\033[0m'
+PATCH_LEVEL="1.6"
+KERNEL_VERSION=$(head -n 3 Makefile | grep -E 'VERSION|PATCHLEVEL' | awk '{print $3}' | paste -sd '.')
+FIRST_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $1}')
+SECOND_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $2}')
 
-# Function to print colored output
-print_info() {
-    echo -e "${COLOR_GREEN}[+]${COLOR_NC} $1"
-}
+echo "Current syscall patch version:$PATCH_LEVEL"
 
-print_error() {
-    echo -e "${COLOR_RED}[-]${COLOR_NC} $1"
-}
+for i in "${patch_files[@]}"; do
 
-print_warning() {
-    echo -e "${COLOR_YELLOW}[!]${COLOR_NC} $1"
-}
-
-print_section() {
-    echo "======================================"
-    echo "$1"
-    echo "======================================"
-}
-
-# Check if files exist
-check_file_exists() {
-    if [ ! -f "$1" ]; then
-        print_error "File not found: $1"
-        return 1
+    if grep -q "ksu_handle" "$i"; then
+        echo "[-] Warning: $i contains KernelSU"
+        echo "[+] Code in here:"
+        grep -n "ksu_handle" "$i"
+        echo "[-] End of file."
+        echo "======================================"
+        continue
     fi
-    return 0
-}
 
-# Check if patch already applied
-is_patched() {
-    if grep -q "ksu_handle" "$1" 2>/dev/null; then
-        return 0
-    fi
-    return 1
-}
+    case $i in
 
-echo ""
-print_section "KernelSU-Next Kernel Source Patcher v${PATCH_VERSION}"
-echo ""
+    # fs/ changes
+    ## exec.c
+    fs/exec.c)
+        echo "======================================"
 
-# Patch fs/exec.c
-if check_file_exists "fs/exec.c"; then
-    print_section "Patching fs/exec.c"
-    
-    if is_patched "fs/exec.c"; then
-        print_warning "fs/exec.c already contains KernelSU patches"
-        echo ""
-    else
-        print_info "Applying patches to fs/exec.c..."
-        
-        # Add extern declaration before do_execve function
-        sed -i '/^int do_execve(struct filename \*filename,/i\
-#ifdef CONFIG_KSU\
-__attribute__((hot))\
-extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,\
-\t\t\t\tvoid *argv, void *envp, int *flags);\
-#endif\
-' fs/exec.c
-        
-        # Add ksu_handle_execveat call in do_execve (first occurrence)
-        sed -i '0,/return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);/{
-            s/return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);/#ifdef CONFIG_KSU\
-\tksu_handle_execveat((int *)AT_FDCWD, \&filename, \&argv, \&envp, 0);\
-#endif\
-\treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);/
-        }' fs/exec.c
-        
-        # Add ksu_handle_execveat call in compat_do_execve (second occurrence - 32-bit support)
-        awk '
-        /return do_execveat_common\(AT_FDCWD, filename, argv, envp, 0\);/ {
-            count++
-            if (count == 2) {
-                print "#ifdef CONFIG_KSU // 32-bit ksud and 32-on-64 support"
-                print "\tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);"
-                print "#endif"
-            }
-        }
-        { print }
-        ' fs/exec.c > fs/exec.c.tmp && mv fs/exec.c.tmp fs/exec.c
-        
-        if grep -q "ksu_handle_execveat" "fs/exec.c"; then
-            print_info "fs/exec.c successfully patched!"
-            print_info "Total ksu_handle_execveat calls: $(grep -c "ksu_handle_execveat" "fs/exec.c")"
+        if grep -q "ksu_handle_execve_sucompat" "drivers/kernelsu/sucompat.c" >/dev/null 2>&1; then
+            echo "[+] Checked ksu_handle_execve_sucompat existed in KernelSU!"
+
+            sed -i '/^SYSCALL_DEFINE3(execve,/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_execve_sucompat(int *fd, const char __user **filename_user,\n\t\t\t       void *__never_use_argv, void *__never_use_envp,\n\t\t\t       int *__never_use_flags);\n#endif\n' fs/exec.c
+            sed -i '/return do_execve(getname(filename), argv, envp);/i\#ifdef CONFIG_KSU\n\tksu_handle_execve_sucompat((int *)AT_FDCWD, \&filename, NULL, NULL, NULL);\n#endif' fs/exec.c
+            sed -i '/return compat_do_execve(getname(filename), argv, envp);/i\#ifdef CONFIG_KSU\n\tksu_handle_execve_sucompat((int *)AT_FDCWD, \&filename, NULL, NULL, NULL);\n#endif' fs/exec.c
         else
-            print_error "fs/exec.c patch failed!"
-            exit 1
-        fi
-    fi
-    echo ""
-fi
+            echo "[-] KernelSU have no execve_sucompat."
 
-# Patch fs/open.c
-if check_file_exists "fs/open.c"; then
-    print_section "Patching fs/open.c"
-    
-    if is_patched "fs/open.c"; then
-        print_warning "fs/open.c already contains KernelSU patches"
-        echo ""
-    else
-        print_info "Applying patches to fs/open.c..."
-        
-        # Add extern declaration before SYSCALL_DEFINE3(faccessat)
-        sed -i '/^SYSCALL_DEFINE3(faccessat, int, dfd, const char __user \*, filename, int, mode)/i\
-#ifdef CONFIG_KSU\
-__attribute__((hot))\
-extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\
-\t\t\t\tint *mode, int *flags);\
-#endif\
-' fs/open.c
-        
-        # Add ksu_handle_faccessat call before mode check
-        sed -i '/if (mode & ~S_IRWXO)/i\
-#ifdef CONFIG_KSU\
-\tksu_handle_faccessat(\&dfd, \&filename, \&mode, NULL);\
-#endif\
-' fs/open.c
-        
+            sed -i '/^static int do_execveat_common(int fd, struct filename \*filename,/i\n#ifdef CONFIG_KSU\nextern bool ksu_execveat_hook __read_mostly;\nextern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,\n\t\t\tvoid *envp, int *flags);\nextern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,\n\t\t\t\t void *envp, int *flags);\n#endif\n' fs/exec.c
+            sed -i '/if (IS_ERR(filename))/i\#ifdef CONFIG_KSU\n\tif (unlikely(ksu_execveat_hook))\n\t\tksu_handle_execveat(\&fd, \&filename, \&argv, \&envp, \&flags);\n\telse\n\t\tksu_handle_execveat_sucompat(\&fd, \&filename, \&argv, \&envp, \&flags);\n#endif\n' fs/exec.c
+        fi
+
+        if grep -q "ksu_handle_execve_sucompat" "fs/exec.c"; then
+            echo "[+] fs/exec.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_execve_sucompat" "fs/exec.c")"
+        elif grep -q "ksu_handle_execveat" "fs/exec.c"; then
+            echo "[+] fs/exec.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_execveat" "fs/exec.c")"
+        else
+            echo "[-] fs/exec.c patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+    ## open.c
+    fs/open.c)
+        if [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 19 ]; then
+            sed -i '/^SYSCALL_DEFINE3(faccessat, int, dfd, const char __user \*, filename, int, mode)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *mode, int *flags);\n#endif\n' fs/open.c
+            sed -i '/if (mode & ~S_IRWXO)/i \#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif' fs/open.c
+        else
+            sed -i '/^SYSCALL_DEFINE3(faccessat, int, dfd, const char __user \*, filename, int, mode)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *mode, int *flags);\n#endif\n' fs/open.c
+            sed -i '/return do_faccessat(dfd, filename, mode);/i \#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif' fs/open.c
+        fi
+
         if grep -q "ksu_handle_faccessat" "fs/open.c"; then
-            print_info "fs/open.c successfully patched!"
-            print_info "Total ksu_handle_faccessat calls: $(grep -c "ksu_handle_faccessat" "fs/open.c")"
+            echo "[+] fs/open.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_faccessat" "fs/open.c")"
         else
-            print_error "fs/open.c patch failed!"
-            exit 1
+            echo "[-] fs/open.c patch failed for unknown reasons, please provide feedback in time."
         fi
-    fi
-    echo ""
-fi
 
-# Patch fs/read_write.c
-if check_file_exists "fs/read_write.c"; then
-    print_section "Patching fs/read_write.c"
-    
-    if is_patched "fs/read_write.c"; then
-        print_warning "fs/read_write.c already contains KernelSU patches"
-        echo ""
-    else
-        print_info "Applying patches to fs/read_write.c..."
-        
-        # Add extern declarations before SYSCALL_DEFINE3(read)
-        sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i\
-#ifdef CONFIG_KSU\
-extern bool ksu_vfs_read_hook __read_mostly;\
-extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\
-\t\t\tchar __user **buf_ptr, size_t *count_ptr);\
-#endif\
-' fs/read_write.c
-        
-        # Add ksu_handle_sys_read call after fdget_pos (before if (f.file))
-        sed -i '/if (f.file) {/i\
-#ifdef CONFIG_KSU\
-\tif (unlikely(ksu_vfs_read_hook))\
-\t\tksu_handle_sys_read(fd, \&buf, \&count);\
-#endif\
-' fs/read_write.c
-        
+        echo "======================================"
+        ;;
+    ## read_write.c
+    fs/read_write.c)
+        if [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 19 ]; then
+            sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i \#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n#endif' fs/read_write.c
+            sed -i '0,/if (f\.file) {/{s/if (f\.file) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, \&buf, \&count);\n#endif\n\tif (f.file) {/}' fs/read_write.c
+        else
+            sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i \#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n#endif' fs/read_write.c
+            sed -i '/return ksys_read(fd, buf, count);/i\#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, &buf, &count);\n#endif' fs/read_write.c
+        fi
+
         if grep -q "ksu_handle_sys_read" "fs/read_write.c"; then
-            print_info "fs/read_write.c successfully patched!"
-            print_info "Total ksu_handle_sys_read calls: $(grep -c "ksu_handle_sys_read" "fs/read_write.c")"
+            echo "[+] fs/read_write.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_sys_read" "fs/read_write.c")"
         else
-            print_error "fs/read_write.c patch failed!"
-            exit 1
+            echo "[-] fs/read_write.c patch failed for unknown reasons, please provide feedback in time."
         fi
-    fi
-    echo ""
-fi
 
-# Patch fs/stat.c
-if check_file_exists "fs/stat.c"; then
-    print_section "Patching fs/stat.c"
-    
-    if is_patched "fs/stat.c"; then
-        print_warning "fs/stat.c already contains KernelSU patches"
-        echo ""
-    else
-        print_info "Applying patches to fs/stat.c..."
-        
-        # Add extern declaration before #if !defined(__ARCH_WANT_STAT64)
-        sed -i '/#if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)/i\
-#ifdef CONFIG_KSU\
-__attribute__((hot))\
-extern int ksu_handle_stat(int *dfd, const char __user **filename_user,\
-\t\t\t\tint *flags);\
-#endif\
-' fs/stat.c
-        
-        # Add ksu_handle_stat call before vfs_fstatat
-        sed -i '/error = vfs_fstatat(dfd, filename, &stat, flag);/i\
-#ifdef CONFIG_KSU\
-\tksu_handle_stat(\&dfd, \&filename, \&flag);\
-#endif\
-' fs/stat.c
-        
+        echo "======================================"
+        ;;
+    ## stat.c
+    fs/stat.c)
+        sed -i '/^#if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_stat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *flags);\n#endif\n' fs/stat.c
+        sed -i '/error = vfs_fstatat(dfd, filename, \&stat, flag);/i\#ifdef CONFIG_KSU\n\tksu_handle_stat(\&dfd, \&filename, \&flag);\n#endif' fs/stat.c
+
         if grep -q "ksu_handle_stat" "fs/stat.c"; then
-            print_info "fs/stat.c successfully patched!"
-            print_info "Total ksu_handle_stat calls: $(grep -c "ksu_handle_stat" "fs/stat.c")"
+            echo "[+] fs/stat.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_stat" "fs/stat.c")"
         else
-            print_error "fs/stat.c patch failed!"
-            exit 1
+            echo "[-] fs/stat.c patch failed for unknown reasons, please provide feedback in time."
         fi
-    fi
-    echo ""
-fi
 
-# Patch kernel/reboot.c
-if check_file_exists "kernel/reboot.c"; then
-    print_section "Patching kernel/reboot.c"
-    
-    if is_patched "kernel/reboot.c"; then
-        print_warning "kernel/reboot.c already contains KernelSU patches"
-        echo ""
-    else
-        print_info "Applying patches to kernel/reboot.c..."
-        
-        # Add extern declaration before SYSCALL_DEFINE4(reboot)
-        sed -i '/^SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i\
-#ifdef CONFIG_KSU\
-extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\
-#endif\
-' kernel/reboot.c
-        
-        # Add ksu_handle_sys_reboot call after "int ret = 0;"
-        sed -i '/int ret = 0;/a\
-#ifdef CONFIG_KSU\
-\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\
-#endif\
-' kernel/reboot.c
-        
-        if grep -q "ksu_handle_sys_reboot" "kernel/reboot.c"; then
-            print_info "kernel/reboot.c successfully patched!"
-            print_info "Total ksu_handle_sys_reboot calls: $(grep -c "ksu_handle_sys_reboot" "kernel/reboot.c")"
+        echo "======================================"
+        ;;
+    ## namei.c
+    fs/namei.c)
+        if grep "throne_tracker" "fs/namei.c" >/dev/null 2>&1; then
+            echo "[-] Warning: fs/namei.c contains KernelSU"
+            echo "[+] Code in here:"
+            grep -n "throne_tracker" "fs/namei.c"
+            echo "[-] End of file."
+        elif [ "$FIRST_VERSION" -lt 4 ] && [ "$SECOND_VERSION" -lt 19 ]; then
+            sed -i '/if (unlikely(err)) {/a \#ifdef CONFIG_KSU\n\t\tif (unlikely(strstr(current->comm, "throne_tracker"))) {\n\t\t\terr = -ENOENT;\n\t\t\tgoto out_err;\n\t\t}\n#endif' fs/namei.c
+
+            if grep -q "throne_tracker" "fs/namei.c"; then
+                echo "[+] fs/namei.c Patched!"
+                echo "[+] Count: $(grep -c "throne_tracker" "fs/namei.c")"
+            else
+                echo "[-] fs/namei.c patch failed for unknown reasons, please provide feedback in time."
+            fi
         else
-            print_error "kernel/reboot.c patch failed!"
-            exit 1
+            echo "[-] Kernel needn't throne_tracker, Skipped."
         fi
-    fi
-    echo ""
-fi
 
-echo ""
-print_section "Patching Complete"
-print_info "All KernelSU-Next patches have been successfully applied!"
-echo ""
-print_info "Next steps:"
-echo "1. Add CONFIG_KSU=y to your kernel defconfig"
-echo "2. Build the kernel with KernelSU-Next integrated"
-echo ""
-print_info "Reference: https://kernelsu-next.github.io/webpage/pages/how-to-integrate-for-non-gki.html"
-echo ""
+        echo "======================================"
+        ;;
+
+    # drivers changes
+    ## input/input.c
+    drivers/input/input.c)
+        sed -i '/^void input_event(struct input_dev \*dev,/i \#ifdef CONFIG_KSU\nextern bool ksu_input_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_input_handle_event(\n\t\t\tunsigned int *type, unsigned int *code, int *value);\n#endif' drivers/input/input.c
+        sed -i '0,/if (is_event_supported(type, dev->evbit, EV_MAX)) {/{s/if (is_event_supported(type, dev->evbit, EV_MAX)) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(\&type, \&code, \&value);\n#endif\n\tif (is_event_supported(type, dev->evbit, EV_MAX)) {/}' drivers/input/input.c
+
+        if grep -q "ksu_handle_input_handle_event" "drivers/input/input.c"; then
+            echo "[+] drivers/input/input.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_input_handle_event" "drivers/input/input.c")"
+        else
+            echo "[-] drivers/input/input.c patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+    ## tty/pty.c
+    drivers/tty/pty.c)
+        if grep -q "ksu_handle_devpts" "kernel/sucompat.c" >/dev/null 2>&1; then
+            echo "[+] Checked ksu_handle_devpts existed in KernelSU!"
+
+            sed -i '/^static struct tty_struct \*pts_unix98_lookup(struct tty_driver \*driver,/i\#ifdef CONFIG_KSU\nextern int ksu_handle_devpts(struct inode*);\n#endif\n' drivers/tty/pty.c
+            sed -i '0,/struct tty_struct \*tty;/{s/struct tty_struct \*tty;/&\n#ifdef CONFIG_KSU\n\tksu_handle_devpts((struct inode *)file->f_path.dentry->d_inode);\n#endif/}' drivers/tty/pty.c
+
+            if grep -q "ksu_handle_devpts" "drivers/tty/pty.c"; then
+                echo "[+] drivers/tty/pty.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_devpts" "drivers/tty/pty.c")"
+            else
+                echo "[-] drivers/tty/pty.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] KernelSU have no devpts, Skipped."
+        fi
+
+        echo "======================================"
+        ;;
+
+    # security/ changes
+    ## security.c
+    security/security.c)
+        if [ "$FIRST_VERSION" -lt 4 ] && [ "$SECOND_VERSION" -lt 19 ]; then
+            sed -i '/int security_binder_set_context_mgr(struct task_struct/i \#ifdef CONFIG_KSU\n\extern int ksu_bprm_check(struct linux_binprm *bprm);\n\extern int ksu_handle_rename(struct dentry *old_dentry, struct dentry *new_dentry);\n\extern int ksu_handle_setuid(struct cred *new, const struct cred *old);\n\#endif' security/security.c
+            sed -i '/ret = security_ops->bprm_check_security(bprm);/i \#ifdef CONFIG_KSU\n\tksu_bprm_check(bprm);\n\#endif' security/security.c
+            sed -i '/if (unlikely(IS_PRIVATE(old_dentry->d_inode) ||/i \#ifdef CONFIG_KSU\n\tksu_handle_rename(old_dentry, new_dentry);\n\#endif' security/security.c
+            sed -i '/return security_ops->task_fix_setuid(new, old, flags);/i \#ifdef CONFIG_KSU\n\tksu_handle_setuid(new, old);\n\#endif' security/security.c
+
+            if grep -q "ksu_handle_setuid" "security/security.c"; then
+                echo "[+] security/security.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_setuid" "security/security.c")"
+            else
+                echo "[-] security/security.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] Kernel needn't setuid, Skipped."
+        fi
+
+        echo "======================================"
+        ;;
+    ## selinux/hooks.c
+    security/selinux/hooks.c)
+        if grep "security_secid_to_secctx" "security/selinux/hooks.c"; then
+            echo "[-] Detected security_secid_to_secctx existed, security/selinux/hooks.c Patched!"
+        elif [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 10 ] && grep -q "grab_transition_sids" "drivers/kernelsu/ksud.c"; then
+            sed -i '/^static int check_nnp_nosuid(const struct linux_binprm \*bprm,/i\#ifdef CONFIG_KSU\nextern bool is_ksu_transition(const struct task_security_struct *old_tsec,\n\t\t\t\tconst struct task_security_struct *new_tsec);\n#endif\n' security/selinux/hooks.c
+            sed -i '/rc = security_bounded_transition(old_tsec->sid, new_tsec->sid);/i\#ifdef CONFIG_KSU\n\tif (is_ksu_transition(old_tsec, new_tsec))\n\t\treturn 0;\n#endif\n' security/selinux/hooks.c
+
+            if grep -q "is_ksu_transition" "security/selinux/hooks.c"; then
+                echo "[+] security/selinux/hooks.c Patched!"
+                echo "[+] Count: $(grep -c "is_ksu_transition" "security/selinux/hooks.c")"
+            else
+                echo "[-] security/selinux/hooks.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        elif [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 10 ]; then
+            sed -i '/int nnp = (bprm->unsafe & LSM_UNSAFE_NO_NEW_PRIVS);/i\#ifdef CONFIG_KSU\n    static u32 ksu_sid;\n    char *secdata;\n#endif' security/selinux/hooks.c
+            sed -i '/if (!nnp && !nosuid)/i\#ifdef CONFIG_KSU\n    int error;\n    u32 seclen;\n#endif' security/selinux/hooks.c
+            sed -i '/return 0; \/\* No change in credentials \*\//a\\n#ifdef CONFIG_KSU\n    if (!ksu_sid)\n        security_secctx_to_secid("u:r:su:s0", strlen("u:r:su:s0"), &ksu_sid);\n\n    error = security_secid_to_secctx(old_tsec->sid, &secdata, &seclen);\n    if (!error) {\n        rc = strcmp("u:r:init:s0", secdata);\n        security_release_secctx(secdata, seclen);\n        if (rc == 0 && new_tsec->sid == ksu_sid)\n            return 0;\n    }\n#endif' security/selinux/hooks.c
+
+            if grep -q "security_secid_to_secctx" "security/selinux/hooks.c"; then
+                echo "[+] security/selinux/hooks.c Patched!"
+                echo "[+] Count: $(grep -c "security_secid_to_secctx" "security/selinux/hooks.c")"
+            else
+                echo "[-] security/selinux/hooks.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] Kernel needn't selinux fix, Skipped."
+        fi
+
+        echo "======================================"
+        ;;
+
+    # kernel/ changes
+    ## kernel/reboot.c
+    kernel/reboot.c)
+        if grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/core_hook.c" >/dev/null 2>&1; then
+            echo "[+] Checked ksu_handle_sys_reboot existed in KernelSU!"
+
+            sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i \#ifdef CONFIG_KSU\n\extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n\#endif' kernel/reboot.c
+            sed -i '/int ret = 0;/a \#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);\n\#endif' kernel/reboot.c
+
+            if grep -q "ksu_handle_sys_reboot" "kernel/reboot.c"; then
+                echo "[+] kernel/reboot.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_sys_reboot" "kernel/reboot.c")"
+            else
+                echo "[-] kernel/reboot.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        elif grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/supercalls.c" >/dev/null 2>&1; then
+            echo "[+] Checked ksu_handle_sys_reboot existed in KernelSU!"
+
+            sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i \#ifdef CONFIG_KSU\n\extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n\#endif' kernel/reboot.c
+            sed -i '/int ret = 0;/a \#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);\n\#endif' kernel/reboot.c
+
+            if grep -q "ksu_handle_sys_reboot" "kernel/reboot.c"; then
+                echo "[+] kernel/reboot.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_sys_reboot" "kernel/reboot.c")"
+            else
+                echo "[-] kernel/reboot.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] KernelSU have no sys_reboot, Skipped."
+        fi
+
+        echo "======================================"
+        ;;
+    ## kernel/sys.c
+    kernel/sys.c)
+        if grep -q "ksu_handle_setresuid" "drivers/kernelsu/setuid_hook.c" >/dev/null 2>&1; then
+
+            if grep -q "__sys_setresuid" "kernel/sys.c" >/dev/null 2>&1; then
+                sed -i '/^SYSCALL_DEFINE3(setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)/i\#ifdef CONFIG_KSU\nextern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);\n#endif\n' kernel/sys.c
+                sed -i '/return __sys_setresuid(ruid, euid, suid);/i\#ifdef CONFIG_KSU_SUSFS\n\tif (ksu_handle_setresuid(ruid, euid, suid)) {\n\t\tpr_info("Something wrong with ksu_handle_setresuid()\\\\n");\n\t}\n#endif\n' kernel/sys.c
+            else
+                sed -i '/^SYSCALL_DEFINE3(setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)/i\#ifdef CONFIG_KSU\nextern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);\n#endif\n' kernel/sys.c
+                sed -i '0,/\tif ((ruid != (uid_t) -1) && !uid_valid(kruid))/b; /\tif ((ruid != (uid_t) -1) && !uid_valid(kruid))/i\#ifdef CONFIG_KSU_SUSFS\n\tif (ksu_handle_setresuid(ruid, euid, suid)) {\n\t\tpr_info("Something wrong with ksu_handle_setresuid()\\\\n");\n\t}\n#endif' kernel/sys.c
+            fi
+
+            if grep -q "ksu_handle_setresuid" "kernel/sys.c"; then
+                echo "[+] kernel/sys.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_setresuid" "kernel/sys.c")"
+            else
+                echo "[-] kernel/sys.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] KernelSU have no ksu_handle_setresuid, Skipped."
+        fi
+
+        echo "======================================"
+        ;;
+    esac
+
+done
