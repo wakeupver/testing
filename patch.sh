@@ -3,7 +3,7 @@
 # Shell author: JackA1ltman <cs2dtzq@163.com>
 # Ref: https://kernelsu-next.github.io/webpage/pages/how-to-integrate-for-non-gki.html
 # Tested kernel versions: 5.4, 4.19, 4.14, 4.9, 4.4, 3.18
-# 20250315
+# Improved for kernel 4.9: 20250315
 
 patch_files=(
     fs/exec.c
@@ -19,6 +19,7 @@ FIRST_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $1}')
 SECOND_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $2}')
 
 echo "Current syscall patch version:$PATCH_LEVEL"
+echo "Kernel version detected: $FIRST_VERSION.$SECOND_VERSION"
 
 for i in "${patch_files[@]}"; do
 
@@ -63,7 +64,13 @@ for i in "${patch_files[@]}"; do
 
         if [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 19 ]; then
             sed -i '/^SYSCALL_DEFINE3(faccessat, int, dfd, const char __user \*, filename, int, mode)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *mode, int *flags);\n#endif\n' fs/open.c
-            sed -i '/if (mode & ~S_IRWXO)/i\#ifdef CONFIG_KSU\n\tksu_handle_faccessat(\&dfd, \&filename, \&mode, NULL);\n#endif' fs/open.c
+            
+            # For kernel 4.9 specifically
+            if [ "$FIRST_VERSION" -eq 4 ] && [ "$SECOND_VERSION" -eq 9 ]; then
+                sed -i '/if (mode & ~S_IRWXO)/i\#ifdef CONFIG_KSU\n\tksu_handle_faccessat(\&dfd, \&filename, \&mode, NULL);\n#endif' fs/open.c
+            else
+                sed -i '/if (mode & ~S_IRWXO)/i\#ifdef CONFIG_KSU\n\tksu_handle_faccessat(\&dfd, \&filename, \&mode, NULL);\n#endif' fs/open.c
+            fi
         else
             sed -i '/^SYSCALL_DEFINE3(faccessat, int, dfd, const char __user \*, filename, int, mode)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *mode, int *flags);\n#endif\n' fs/open.c
             sed -i '/return do_faccessat(dfd, filename, mode);/i\#ifdef CONFIG_KSU\n\tksu_handle_faccessat(\&dfd, \&filename, \&mode, NULL);\n#endif' fs/open.c
@@ -87,7 +94,13 @@ for i in "${patch_files[@]}"; do
 
             if [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 19 ]; then
                 sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i\#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n#endif' fs/read_write.c
-                sed -i '0,/if (f\.file) {/{s/if (f\.file) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, \&buf, \&count);\n#endif\n\tif (f.file) {/}' fs/read_write.c
+                
+                # For kernel 4.9: use if (f.file) pattern
+                if [ "$FIRST_VERSION" -eq 4 ] && [ "$SECOND_VERSION" -eq 9 ]; then
+                    sed -i '0,/if (f\.file) {/{s/if (f\.file) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, \&buf, \&count);\n#endif\n\tif (f.file) {/}' fs/read_write.c
+                else
+                    sed -i '0,/if (f\.file) {/{s/if (f\.file) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, \&buf, \&count);\n#endif\n\tif (f.file) {/}' fs/read_write.c
+                fi
             else
                 sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i\#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n#endif' fs/read_write.c
                 sed -i '/return ksys_read(fd, buf, count);/i\#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, \&buf, \&count);\n#endif' fs/read_write.c
@@ -160,4 +173,3 @@ for i in "${patch_files[@]}"; do
     esac
 
 done
-
