@@ -19,7 +19,7 @@ jobs:
           arch: arm64
           aosp-gcc: true
           aosp-clang: true
-          clang-version: r547379
+          aosp-clang-version: r547379
           # other-clang-url: https://github.com/kdrag0n/proton-clang.git
           # other-clang-branch: master
           ksu: true
