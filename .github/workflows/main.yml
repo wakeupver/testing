@@ -17,7 +17,6 @@ jobs:
           kernel-branch: lineage-20
           config: vendor/xiaomi/mi845_defconfig
           arch: arm64
-          android-version: false
           aosp-gcc: true
           aosp-clang: false
           # aosp-clang-version: r547379
