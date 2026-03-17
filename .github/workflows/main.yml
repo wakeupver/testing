@@ -18,9 +18,9 @@ jobs:
           config: vendor/xiaomi/mi845_defconfig
           arch: arm64
           aosp-gcc: true
-          aosp-clang: false
-          other-clang-url: https://github.com/kdrag0n/proton-clang.git
-          other-clang-branch: master
+          aosp-clang: true
+          # other-clang-url: https://github.com/kdrag0n/proton-clang.git
+          # other-clang-branch: master
           ksu: true
           ksu-other: true
           ksu-version: legacy
