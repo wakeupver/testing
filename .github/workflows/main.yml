@@ -17,11 +17,12 @@ jobs:
           kernel-branch: lineage-20
           config: vendor/xiaomi/mi845_defconfig
           arch: arm64
+          android-version: false
           aosp-gcc: true
-          aosp-clang: true
-          aosp-clang-version: r547379
-          # other-clang-url: https://github.com/kdrag0n/proton-clang.git
-          # other-clang-branch: master
+          # aosp-clang: false
+          # aosp-clang-version: r547379
+          other-clang-url: https://github.com/kdrag0n/proton-clang.git
+          other-clang-branch: master
           ksu: true
           ksu-other: true
           ksu-version: legacy
