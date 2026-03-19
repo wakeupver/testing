@@ -13,9 +13,9 @@ jobs:
       - name: Build
         uses: wakeupver/kernel_build_action@main
         with:
-          kernel-url: https://github.com/wakeupver/android_kernel_xiaomi_sdm845_los
-          kernel-branch: lineage-20
-          config: vendor/xiaomi/mi845_defconfig
+          kernel-url: https://github.com/wakeupver/android_kernel_xiaomi_sdm845
+          kernel-branch: thirteen
+          config: vendor/xiaomi/silvercore_defconfig
           arch: arm64
           aosp-gcc: true
           aosp-clang: false
@@ -27,4 +27,3 @@ jobs:
           ksu-version: legacy
           ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
           anykernel3: true
-          extra-make-args: CROSS_COMPILE_ARM32=arm-linux-gnueabi-
