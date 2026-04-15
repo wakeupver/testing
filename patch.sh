@@ -5,6 +5,9 @@
 # 20250309
 
 patch_files=(
+    fs/exec.c
+    fs/open.c
+    fs/stat.c
     security/selinux/hooks.c
 )
 
@@ -28,6 +31,58 @@ for i in "${patch_files[@]}"; do
 
     case $i in
 
+    # fs/ changes
+    ## exec.c
+    fs/exec.c)
+        echo "======================================"
+
+        sed -i '/^int do_execve(struct filename \*filename,/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,\n\t\t\tvoid *argv, void *envp, int *flags);\n#endif\n' fs/exec.c
+        sed -i '/return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);/i\#ifdef CONFIG_KSU\n\tksu_handle_execveat((int *)AT_FDCWD, \&filename, \&argv, \&envp, 0);\n#endif' fs/exec.c
+
+        if grep -q "ksu_handle_execveat" "fs/exec.c"; then
+            echo "[+] fs/exec.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_execveat" "fs/exec.c")"
+        else
+            echo "[-] fs/exec.c patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+
+    ## open.c
+    fs/open.c)
+        echo "======================================"
+
+        sed -i '/^SYSCALL_DEFINE3(faccessat, int, dfd, const char __user \*, filename, int, mode)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *mode, int *flags);\n#endif\n' fs/open.c
+        sed -i '/if (mode & ~S_IRWXO)/i\#ifdef CONFIG_KSU\n\tksu_handle_faccessat(\&dfd, \&filename, \&mode, NULL);\n#endif' fs/open.c
+
+        if grep -q "ksu_handle_faccessat" "fs/open.c"; then
+            echo "[+] fs/open.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_faccessat" "fs/open.c")"
+        else
+            echo "[-] fs/open.c patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+
+    ## stat.c
+    fs/stat.c)
+        echo "======================================"
+
+        sed -i '/^#if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_stat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *flags);\n#endif\n' fs/stat.c
+        sed -i '/error = vfs_fstatat(dfd, filename, \&stat, flag);/i\#ifdef CONFIG_KSU\n\tksu_handle_stat(\&dfd, \&filename, \&flag);\n#endif' fs/stat.c
+
+        if grep -q "ksu_handle_stat" "fs/stat.c"; then
+            echo "[+] fs/stat.c Patched!"
+            echo "[+] Count: $(grep -c "ksu_handle_stat" "fs/stat.c")"
+        else
+            echo "[-] fs/stat.c patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+        
         ## selinux/hooks.c
     security/selinux/hooks.c)
         if grep -q "security_secid_to_secctx" "security/selinux/hooks.c" >/dev/null 2>&1; then
