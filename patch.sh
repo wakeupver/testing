@@ -2,7 +2,8 @@
 # Patches author: backslashxx @ Github
 # Shell author: JackA1ltman <cs2dtzq@163.com>
 # Tested kernel versions: 5.4, 4.19, 4.14, 4.9, 4.4, 3.18
-# 20250309
+# Updated for KernelSU Next (https://kernelsu-next.github.io/webpage/pages/how-to-integrate-for-non-gki.html)
+# 20250415
 
 patch_files=(
     fs/exec.c
@@ -13,16 +14,16 @@ patch_files=(
     security/selinux/hooks.c
 )
 
-PATCH_LEVEL="1.9"
+PATCH_LEVEL="2.0"
 KERNEL_VERSION=$(head -n 3 Makefile | grep -E 'VERSION|PATCHLEVEL' | awk '{print $3}' | paste -sd '.')
 FIRST_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $1}')
 SECOND_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $2}')
 
-echo "Current syscall patch version:$PATCH_LEVEL"
+echo "Current syscall patch version: $PATCH_LEVEL"
 
 for i in "${patch_files[@]}"; do
 
-    if [[ "$i" != "drivers/kernelsu/compat/kernel_compat.h" ]] && grep -q "ksu_handle" "$i" 2>/dev/null; then
+    if grep -q "ksu_handle" "$i"; then
         echo "[-] Warning: $i contains KernelSU"
         echo "[+] Code in here:"
         grep -n "ksu_handle" "$i"
@@ -38,12 +39,23 @@ for i in "${patch_files[@]}"; do
     fs/exec.c)
         echo "======================================"
 
+        # Insert extern declaration before do_execve
         sed -i '/^int do_execve(struct filename \*filename,/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,\n\t\t\tvoid *argv, void *envp, int *flags);\n#endif\n' fs/exec.c
+
+        # Insert hook in do_execve and compat_do_execve (matches all occurrences)
+        # This covers: do_execve (64-bit) and compat_do_execve (32-bit / 32-on-64 support)
         sed -i '/return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);/i\#ifdef CONFIG_KSU\n\tksu_handle_execveat((int *)AT_FDCWD, \&filename, \&argv, \&envp, 0);\n#endif' fs/exec.c
 
         if grep -q "ksu_handle_execveat" "fs/exec.c"; then
+            EXEC_COUNT=$(grep -c "ksu_handle_execveat" "fs/exec.c")
             echo "[+] fs/exec.c Patched!"
-            echo "[+] Count: $(grep -c "ksu_handle_execveat" "fs/exec.c")"
+            echo "[+] Count: $EXEC_COUNT"
+            # compat_do_execve adds 2 extra occurrences (extern + hook)
+            if [ "$EXEC_COUNT" -ge 4 ]; then
+                echo "[+] compat_do_execve also patched (32-bit / 32-on-64 support)"
+            else
+                echo "[-] compat_do_execve not found or not patched (may not exist on this kernel)"
+            fi
         else
             echo "[-] fs/exec.c patch failed for unknown reasons, please provide feedback in time."
         fi
@@ -83,7 +95,7 @@ for i in "${patch_files[@]}"; do
                 echo "[-] fs/read_write.c patch failed for unknown reasons, please provide feedback in time."
             fi
         else
-            echo "[-] KernelSU have no sys_read, Skipped."
+            echo "[-] KernelSU Next has no sys_read hook for this config, Skipped."
         fi
 
         echo "======================================"
@@ -93,6 +105,8 @@ for i in "${patch_files[@]}"; do
     fs/stat.c)
         echo "======================================"
 
+        # Insert extern declaration between SYSCALL_DEFINE2(newlstat) and #if !defined(__ARCH_WANT_STAT64)
+        # per KernelSU Next docs diff (@@ -353,6 +353,10 @@ SYSCALL_DEFINE2(newlstat ...)
         sed -i '/^#if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)/i\#ifdef CONFIG_KSU\n__attribute__((hot))\nextern int ksu_handle_stat(int *dfd, const char __user **filename_user,\n\t\t\t\tint *flags);\n#endif\n' fs/stat.c
         sed -i '/error = vfs_fstatat(dfd, filename, \&stat, flag);/i\#ifdef CONFIG_KSU\n\tksu_handle_stat(\&dfd, \&filename, \&flag);\n#endif' fs/stat.c
 
@@ -113,7 +127,7 @@ for i in "${patch_files[@]}"; do
 
         if grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/core_hook.c" >/dev/null 2>&1 || \
            grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/supercalls.c" >/dev/null 2>&1; then
-            echo "[+] Checked ksu_handle_sys_reboot existed in KernelSU!"
+            echo "[+] Checked ksu_handle_sys_reboot existed in KernelSU Next!"
 
             sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i\#ifdef CONFIG_KSU\nextern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n#endif\n' kernel/reboot.c
             sed -i '/int ret = 0;/a\#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\n#endif' kernel/reboot.c
@@ -125,7 +139,7 @@ for i in "${patch_files[@]}"; do
                 echo "[-] kernel/reboot.c patch failed for unknown reasons, please provide feedback in time."
             fi
         else
-            echo "[-] KernelSU have no sys_reboot, Skipped."
+            echo "[-] KernelSU Next has no sys_reboot hook for this config, Skipped."
         fi
 
         echo "======================================"
@@ -133,8 +147,10 @@ for i in "${patch_files[@]}"; do
 
     ## selinux/hooks.c
     security/selinux/hooks.c)
+        echo "======================================"
+
         if grep -q "security_secid_to_secctx" "security/selinux/hooks.c" >/dev/null 2>&1; then
-            echo "[-] Detected security_secid_to_secctx existed, security/selinux/hooks.c Patched!"
+            echo "[-] Detected security_secid_to_secctx existed, security/selinux/hooks.c already patched!"
         elif [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 10 ]; then
             sed -i '/int nnp = (bprm->unsafe & LSM_UNSAFE_NO_NEW_PRIVS);/i\#ifdef CONFIG_KSU\n    static u32 ksu_sid;\n    char *secdata;\n#endif' security/selinux/hooks.c
             sed -i '/if (!nnp && !nosuid)/i\#ifdef CONFIG_KSU\n    int error;\n    u32 seclen;\n#endif' security/selinux/hooks.c
@@ -147,7 +163,7 @@ for i in "${patch_files[@]}"; do
                 echo "[-] security/selinux/hooks.c patch failed for unknown reasons, please provide feedback in time."
             fi
         else
-            echo "[-] Kernel needn't selinux fix, Skipped."
+            echo "[-] Kernel does not need selinux fix, Skipped."
         fi
 
         echo "======================================"
