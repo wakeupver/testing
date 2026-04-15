@@ -11,7 +11,6 @@ patch_files=(
     fs/stat.c
     kernel/reboot.c
     security/selinux/hooks.c
-    drivers/kernelsu/compat/kernel_compat.h
 )
 
 PATCH_LEVEL="1.9"
@@ -149,34 +148,6 @@ for i in "${patch_files[@]}"; do
             fi
         else
             echo "[-] Kernel needn't selinux fix, Skipped."
-        fi
-
-        echo "======================================"
-        ;;
-
-    ## KernelSU compat fix: ksu_kvfree const qualifier
-    drivers/kernelsu/compat/kernel_compat.h)
-        echo "======================================"
-
-        if [ ! -f "drivers/kernelsu/compat/kernel_compat.h" ]; then
-            echo "[-] drivers/kernelsu/compat/kernel_compat.h not found, Skipped."
-            echo "======================================"
-            continue
-        fi
-
-        if grep -q "const void \*buf" "drivers/kernelsu/compat/kernel_compat.h"; then
-            echo "[-] drivers/kernelsu/compat/kernel_compat.h already has const fix, Skipped."
-            echo "======================================"
-            continue
-        fi
-
-        sed -i 's/static inline void ksu_kvfree(void \*buf)/static inline void ksu_kvfree(const void *buf)/' \
-            drivers/kernelsu/compat/kernel_compat.h
-
-        if grep -q "const void \*buf" "drivers/kernelsu/compat/kernel_compat.h"; then
-            echo "[+] drivers/kernelsu/compat/kernel_compat.h Patched! (ksu_kvfree const fix)"
-        else
-            echo "[-] drivers/kernelsu/compat/kernel_compat.h patch failed for unknown reasons, please provide feedback in time."
         fi
 
         echo "======================================"
