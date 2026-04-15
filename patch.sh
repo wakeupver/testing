@@ -7,7 +7,9 @@
 patch_files=(
     fs/exec.c
     fs/open.c
+    fs/read_write.c
     fs/stat.c
+    kernel/reboot.c
     security/selinux/hooks.c
 )
 
@@ -66,6 +68,27 @@ for i in "${patch_files[@]}"; do
         echo "======================================"
         ;;
 
+    ## read_write.c
+    fs/read_write.c)
+        echo "======================================"
+
+        if grep -q "sys_read" "drivers/kernelsu/arch.h" >/dev/null 2>&1; then
+            sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i\#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n#endif' fs/read_write.c
+            sed -i '0,/if (f\.file) {/{s/if (f\.file) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, \&buf, \&count);\n#endif\n\tif (f.file) {/}' fs/read_write.c
+
+            if grep -q "ksu_handle_sys_read" "fs/read_write.c"; then
+                echo "[+] fs/read_write.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_sys_read" "fs/read_write.c")"
+            else
+                echo "[-] fs/read_write.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] KernelSU have no sys_read, Skipped."
+        fi
+
+        echo "======================================"
+        ;;
+
     ## stat.c
     fs/stat.c)
         echo "======================================"
@@ -78,6 +101,31 @@ for i in "${patch_files[@]}"; do
             echo "[+] Count: $(grep -c "ksu_handle_stat" "fs/stat.c")"
         else
             echo "[-] fs/stat.c patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+
+    # kernel/ changes
+    ## kernel/reboot.c
+    kernel/reboot.c)
+        echo "======================================"
+
+        if grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/core_hook.c" >/dev/null 2>&1 || \
+           grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/supercalls.c" >/dev/null 2>&1; then
+            echo "[+] Checked ksu_handle_sys_reboot existed in KernelSU!"
+
+            sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i\#ifdef CONFIG_KSU\nextern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n#endif\n' kernel/reboot.c
+            sed -i '/int ret = 0;/a\#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\n#endif' kernel/reboot.c
+
+            if grep -q "ksu_handle_sys_reboot" "kernel/reboot.c"; then
+                echo "[+] kernel/reboot.c Patched!"
+                echo "[+] Count: $(grep -c "ksu_handle_sys_reboot" "kernel/reboot.c")"
+            else
+                echo "[-] kernel/reboot.c patch failed for unknown reasons, please provide feedback in time."
+            fi
+        else
+            echo "[-] KernelSU have no sys_reboot, Skipped."
         fi
 
         echo "======================================"
