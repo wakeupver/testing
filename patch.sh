@@ -122,60 +122,24 @@ for i in "${patch_files[@]}"; do
 
     # kernel/ changes
     ## kernel/reboot.c
-    ## Tuned for Snapdragon 845 / Poco F1 (beryllium) — CAF kernel 4.9
     kernel/reboot.c)
         echo "======================================"
 
-        # Detect which KernelSU Next source file exposes ksu_handle_sys_reboot
-        KSU_REBOOT_SRC=""
-        for _src in \
-            "drivers/kernelsu/core_hook.c" \
-            "drivers/kernelsu/supercalls.c" \
-            "drivers/kernelsu/ksud.c"; do
-            if grep -q "ksu_handle_sys_reboot" "$_src" 2>/dev/null; then
-                KSU_REBOOT_SRC="$_src"
-                break
-            fi
-        done
+        if grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/core_hook.c" >/dev/null 2>&1 || \
+           grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/supercalls.c" >/dev/null 2>&1; then
+            echo "[+] Checked ksu_handle_sys_reboot existed in KernelSU Next!"
 
-        if [ -n "$KSU_REBOOT_SRC" ]; then
-            echo "[+] ksu_handle_sys_reboot found in: $KSU_REBOOT_SRC"
+            sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i\#ifdef CONFIG_KSU\nextern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n#endif\n' kernel/reboot.c
+            sed -i '/int ret = 0;/a\#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\n#endif' kernel/reboot.c
 
-            # 1. Insert extern declaration before SYSCALL_DEFINE4(reboot,...)
-            sed -i '/^SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i\#ifdef CONFIG_KSU\nextern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n#endif\n' kernel/reboot.c
-
-            # 2. Insert hook using range-based sed so it only targets the reboot
-            #    syscall body — NOT any other function that might also have `int ret = 0;`.
-            #    Range: from SYSCALL_DEFINE4(reboot,...) up to the capabilities check.
-            #    This is safe on CAF 4.9 (beryllium/MIUI) kernels.
-            sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/,/We only trust the superuser/{
-                /int ret = 0;/a\\#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\n#endif
-            }' kernel/reboot.c
-
-            # 3. Verify — if range sed failed (e.g. MIUI changed the comment text),
-            #    fall back to a simple append on the first matching `int ret = 0;`
-            if ! grep -q "ksu_handle_sys_reboot" "kernel/reboot.c"; then
-                echo "[-] Range-based patch failed (MIUI/CAF comment mismatch?), trying fallback..."
-                sed -i '0,/int ret = 0;/{
-                    /int ret = 0;/a\\#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\n#endif
-                }' kernel/reboot.c
-            fi
-
-            # 4. Final result
             if grep -q "ksu_handle_sys_reboot" "kernel/reboot.c"; then
                 echo "[+] kernel/reboot.c Patched!"
                 echo "[+] Count: $(grep -c "ksu_handle_sys_reboot" "kernel/reboot.c")"
             else
-                echo "[-] kernel/reboot.c patch failed completely."
-                echo "    Kernel: SDM845 / beryllium (CAF 4.9)"
-                echo "    Please manually add after 'int ret = 0;' inside SYSCALL_DEFINE4(reboot,...):"
-                echo "      #ifdef CONFIG_KSU"
-                echo "      \tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);"
-                echo "      #endif"
+                echo "[-] kernel/reboot.c patch failed for unknown reasons, please provide feedback in time."
             fi
         else
-            echo "[-] ksu_handle_sys_reboot not found in KernelSU Next drivers, Skipped."
-            echo "    Checked: core_hook.c, supercalls.c, ksud.c"
+            echo "[-] KernelSU Next has no sys_reboot hook for this config, Skipped."
         fi
 
         echo "======================================"
