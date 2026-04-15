@@ -11,6 +11,7 @@ patch_files=(
     fs/stat.c
     kernel/reboot.c
     security/selinux/hooks.c
+    drivers/kernelsu/compat/kernel_compat.h
 )
 
 PATCH_LEVEL="1.9"
@@ -22,7 +23,7 @@ echo "Current syscall patch version:$PATCH_LEVEL"
 
 for i in "${patch_files[@]}"; do
 
-    if grep -q "ksu_handle" "$i"; then
+    if [[ "$i" != "drivers/kernelsu/compat/kernel_compat.h" ]] && grep -q "ksu_handle" "$i" 2>/dev/null; then
         echo "[-] Warning: $i contains KernelSU"
         echo "[+] Code in here:"
         grep -n "ksu_handle" "$i"
@@ -130,8 +131,8 @@ for i in "${patch_files[@]}"; do
 
         echo "======================================"
         ;;
-        
-        ## selinux/hooks.c
+
+    ## selinux/hooks.c
     security/selinux/hooks.c)
         if grep -q "security_secid_to_secctx" "security/selinux/hooks.c" >/dev/null 2>&1; then
             echo "[-] Detected security_secid_to_secctx existed, security/selinux/hooks.c Patched!"
@@ -152,7 +153,35 @@ for i in "${patch_files[@]}"; do
 
         echo "======================================"
         ;;
-        
+
+    ## KernelSU compat fix: ksu_kvfree const qualifier
+    drivers/kernelsu/compat/kernel_compat.h)
+        echo "======================================"
+
+        if [ ! -f "drivers/kernelsu/compat/kernel_compat.h" ]; then
+            echo "[-] drivers/kernelsu/compat/kernel_compat.h not found, Skipped."
+            echo "======================================"
+            continue
+        fi
+
+        if grep -q "const void \*buf" "drivers/kernelsu/compat/kernel_compat.h"; then
+            echo "[-] drivers/kernelsu/compat/kernel_compat.h already has const fix, Skipped."
+            echo "======================================"
+            continue
+        fi
+
+        sed -i 's/static inline void ksu_kvfree(void \*buf)/static inline void ksu_kvfree(const void *buf)/' \
+            drivers/kernelsu/compat/kernel_compat.h
+
+        if grep -q "const void \*buf" "drivers/kernelsu/compat/kernel_compat.h"; then
+            echo "[+] drivers/kernelsu/compat/kernel_compat.h Patched! (ksu_kvfree const fix)"
+        else
+            echo "[-] drivers/kernelsu/compat/kernel_compat.h patch failed for unknown reasons, please provide feedback in time."
+        fi
+
+        echo "======================================"
+        ;;
+
     esac
 
 done
