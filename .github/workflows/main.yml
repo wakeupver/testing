@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Build
-        uses: wakeupver/kernel_build_action@main
+        uses: dabao1955/kernel_build_action@main
         with:
           kernel-url: https://github.com/wakeupver/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
@@ -23,7 +23,7 @@ jobs:
           other-clang-url: https://github.com/kdrag0n/proton-clang.git
           other-clang-branch: master
           ksu: true
-          ksu-other: true
-          ksu-version: legacy
-          ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
+          # ksu-other: true
+          # ksu-version: legacy
+          # ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
           anykernel3: true
