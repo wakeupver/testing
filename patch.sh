@@ -109,14 +109,21 @@ for i in "${patch_files[@]}"; do
     # kernel/ changes
     ## kernel/reboot.c
     kernel/reboot.c)
-        echo "======================================"
-
-        if grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/core_hook.c" >/dev/null 2>&1 || \
-           grep -q "ksu_handle_sys_reboot" "drivers/kernelsu/supercalls.c" >/dev/null 2>&1; then
+        if grep -rq --include="*.c" --include="*.h" "ksu_handle_sys_reboot" "drivers/kernelsu/" >/dev/null 2>&1; then
             echo "[+] Checked ksu_handle_sys_reboot existed in KernelSU!"
 
-            sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i\#ifdef CONFIG_KSU\nextern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n#endif\n' kernel/reboot.c
-            sed -i '/int ret = 0;/a\#ifdef CONFIG_KSU\n\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\n#endif' kernel/reboot.c
+            sed -i '/SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,/i\
+#ifdef CONFIG_KSU\
+extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\
+#endif\
+' kernel/reboot.c
+            sed -i '/if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))/i\
+#ifdef CONFIG_KSU\
+\tif (system_state == SYSTEM_RUNNING) {\
+\t\tksu_handle_sys_reboot(magic1, magic2, cmd, \&arg);\
+\t}\
+#endif\
+' kernel/reboot.c
 
             if grep -q "ksu_handle_sys_reboot" "kernel/reboot.c"; then
                 echo "[+] kernel/reboot.c Patched!"
@@ -125,7 +132,7 @@ for i in "${patch_files[@]}"; do
                 echo "[-] kernel/reboot.c patch failed for unknown reasons, please provide feedback in time."
             fi
         else
-            echo "[-] KernelSU have no sys_reboot, Skipped."
+            echo "[-] KernelSU needn't ksu_handle_sys_reboot, Skipped."
         fi
 
         echo "======================================"
