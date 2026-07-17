@@ -24,6 +24,6 @@ jobs:
           other-clang-branch: master
           ksu: true
           ksu-other: true
-          ksu-version: builtin
-          ksu-url: https://github.com/SukiSU-Ultra/SukiSU-Ultra
+          ksu-version: main
+          ksu-url: https://github.com/ReSukiSU/ReSukiSU
           anykernel3: true
