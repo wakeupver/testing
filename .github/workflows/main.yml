@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Build
-        uses: wakeupver/kernel_build_action@main
+        uses: dabao1955/kernel_build_action@main
         with:
           kernel-url: https://github.com/wakeupver/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
@@ -24,6 +24,6 @@ jobs:
           other-clang-branch: master
           ksu: true
           ksu-other: true
-          ksu-version: v4.1.0
-          ksu-url: https://github.com/ReSukiSU/ReSukiSU
+          ksu-version: v4.1.3
+          ksu-url: https://github.com/SukiSU-Ultra/SukiSU-Ultra
           anykernel3: true
