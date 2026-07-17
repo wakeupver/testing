@@ -13,7 +13,7 @@ jobs:
       - name: Build
         uses: wakeupver/kernel_build_action@patch
         with:
-          kernel-url: https://github.com/wakeupver/android_kernel_xiaomi_sdm845
+          kernel-url: https://github.com/PainKiller3/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
           config: vendor/xiaomi/silvercore_defconfig
           arch: arm64
@@ -24,6 +24,6 @@ jobs:
           other-clang-branch: master
           ksu: true
           ksu-other: true
-          ksu-version: legacy
-          ksu-url: https://github.com/KernelSU-Next/KernelSU-Next
+          ksu-version: builtin
+          ksu-url: https://github.com/sukisu-ultra/sukisu-ultra
           anykernel3: true
