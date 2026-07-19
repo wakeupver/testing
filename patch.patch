@@ -1,227 +1,321 @@
-diff --git a/drivers/input/input.c b/drivers/input/input.c
-index a408588b8ea8..0a593ac30dc3 100644
---- a/drivers/input/input.c
-+++ b/drivers/input/input.c
-@@ -433,13 +433,11 @@ static int input_get_disposition(struct input_dev *dev,
- 	return disposition;
+diff -urN a/fs/exec.c b/fs/exec.c
+--- a/fs/exec.c	2026-07-08 17:14:53.719978000 +0800
++++ b/fs/exec.c	2026-07-08 17:31:58.923956775 +0800
+@@ -1829,12 +1829,23 @@
+ 	return retval;
  }
  
--extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
- 
- static void input_handle_event(struct input_dev *dev,
- 			       unsigned int type, unsigned int code, int value)
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot))
++extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
++				void *argv, void *envp, int *flags);
++#endif
++
+ int do_execve(struct filename *filename,
+ 	const char __user *const __user *__argv,
+ 	const char __user *const __user *__envp)
  {
--	int disposition = input_get_disposition(dev, type, code, &value);
--        ksu_handle_input_handle_event(&type, &code, &value);
-+	int disposition;
+ 	struct user_arg_ptr argv = { .ptr.native = __argv };
+ 	struct user_arg_ptr envp = { .ptr.native = __envp };
++	
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
++#endif	
++	
+ 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+ }
  
- 	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
+@@ -1862,6 +1873,11 @@
+ 		.is_compat = true,
+ 		.ptr.compat = __envp,
+ 	};
++	
++#ifdef CONFIG_KSU_MANUAL_HOOK // 32-bit ksud and 32-on-64 support
++	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
++#endif	
++	
+ 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+ }
  
-@@ -494,11 +492,22 @@ static void input_handle_event(struct input_dev *dev,
+diff -urN a/drivers/input/input.c b/drivers/input/input.c
+--- a/drivers/input/input.c	2026-07-08 17:14:46.791978000 +0800
++++ b/drivers/input/input.c	2026-07-08 17:40:08.667946261 +0800
+@@ -425,11 +425,23 @@
   * to 'seed' initial state of a switch or initial position of absolute
   * axis, etc.
   */
-+
-+#ifdef CONFIG_KSU
++ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
 +extern bool ksu_input_hook __read_mostly;
-+extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
-+#endif
-+
++extern __attribute__((cold)) int ksu_handle_input_handle_event(
++			unsigned int *type, unsigned int *code, int *value);
++#endif 
++ 
  void input_event(struct input_dev *dev,
  		 unsigned int type, unsigned int code, int value)
  {
  	unsigned long flags;
  
-+	#ifdef CONFIG_KSU
++#ifdef CONFIG_KSU_MANUAL_HOOK
 +	if (unlikely(ksu_input_hook))
 +		ksu_handle_input_handle_event(&type, &code, &value);
-+	#endif
++#endif
 +
  	if (is_event_supported(type, dev->evbit, EV_MAX)) {
  
  		spin_lock_irqsave(&dev->event_lock, flags);
-diff --git a/drivers/tty/pty.c b/drivers/tty/pty.c
-index 171130a9ecc8..6e979963c121 100644
---- a/drivers/tty/pty.c
-+++ b/drivers/tty/pty.c
-@@ -637,10 +637,20 @@ static struct tty_struct *ptm_unix98_lookup(struct tty_driver *driver,
-  *	This provides our locking for the tty pointer.
-  */
- 
-+#ifdef CONFIG_KSU
-+extern int ksu_handle_devpts(struct inode*);
-+#endif
-+
- static struct tty_struct *pts_unix98_lookup(struct tty_driver *driver,
- 		struct file *file, int idx)
- {
- 	struct tty_struct *tty;
-+	struct inode *pts_inode;
-+
-+	#ifdef CONFIG_KSU
-+	pts_inode = file->f_path.dentry->d_inode;
-+	ksu_handle_devpts(pts_inode);
-+	#endif
- 
- 	mutex_lock(&devpts_mutex);
- 	tty = devpts_get_priv(file->f_path.dentry);
-diff --git a/fs/exec.c b/fs/exec.c
-index 6c35ad67fac6..380512918dd6 100644
---- a/fs/exec.c
-+++ b/fs/exec.c
-@@ -1670,9 +1670,12 @@ static int exec_binprm(struct linux_binprm *bprm)
- 
- 	return ret;
+diff -urN a/fs/namespace.c b/fs/namespace.c
+--- a/fs/namespace.c	2026-07-08 17:14:53.851978000 +0800
++++ b/fs/namespace.c	2026-07-08 18:32:31.147878797 +0800
+@@ -1695,6 +1695,40 @@
+ 	return capable(CAP_SYS_ADMIN);
  }
--
-+#ifdef CONFIG_KSU
-+static bool ksu_execveat_hook __read_mostly = false;
-+extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);
- extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
- 			void *envp, int *flags);
-+#endif
  
++static int can_umount(const struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++
++	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
++		return -EINVAL;
++	if (!may_mount())
++		return -EPERM;
++	if (path->dentry != path->mnt->mnt_root)
++		return -EINVAL;
++	if (!check_mnt(mnt))
++		return -EINVAL;
++	if (mnt->mnt.mnt_flags & MNT_LOCKED) /* Check optimistically */
++		return -EINVAL;
++	if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
++		return -EPERM;
++	return 0;
++}
++
++int path_umount(struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++	int ret;
++
++	ret = can_umount(path, flags);
++	if (!ret)
++		ret = do_umount(mnt, flags);
++
++	/* we mustn't call path_put() as that would clear mnt_expiry_mark */
++	dput(path->dentry);
++	mntput_no_expire(mnt);
++	return ret;
++}
++
  /*
-  * sys_execve() executes a new program.
-@@ -1688,7 +1691,7 @@ static int do_execveat_common(int fd, struct filename *filename,
- 	struct files_struct *displaced;
- 	int retval;
- 
--        ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
-+	
- 
- 	if (IS_ERR(filename))
- 		return PTR_ERR(filename);
-@@ -1831,6 +1834,12 @@ int do_execve(struct filename *filename,
- {
- 	struct user_arg_ptr argv = { .ptr.native = __argv };
- 	struct user_arg_ptr envp = { .ptr.native = __envp };
-+	#ifdef CONFIG_KSU
-+	if (unlikely(ksu_execveat_hook))
-+		ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
-+	else
-+		ksu_handle_execveat_sucompat((int *)AT_FDCWD, &filename, NULL, NULL, NULL);
-+	#endif
- 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
- }
- 
-@@ -1858,6 +1867,10 @@ static int compat_do_execve(struct filename *filename,
- 		.is_compat = true,
- 		.ptr.compat = __envp,
- 	};
-+	#ifdef CONFIG_KSU
-+	if (!ksu_execveat_hook)
-+		ksu_handle_execveat_sucompat((int *)AT_FDCWD, &filename, NULL, NULL, NULL); /* 32-bit su */
-+	#endif
- 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
- }
- 
-diff --git a/fs/open.c b/fs/open.c
-index 100494cd8849..9174586f4acb 100644
---- a/fs/open.c
-+++ b/fs/open.c
-@@ -355,8 +355,10 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+  * Now umount can handle mount points as well as block devices.
+  * This is important for filesystems which use unnamed block devices.
+diff -urN a/fs/open.c b/fs/open.c
+--- a/fs/open.c	2026-07-08 17:14:54.019978000 +0800
++++ b/fs/open.c	2026-07-08 17:34:59.299952902 +0800
+@@ -355,6 +355,13 @@
  	return error;
  }
  
-+#ifdef CONFIG_KSU
- extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
--			        int *flags);
-+			                    int *flags);
++
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot)) 
++extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
++				int *mode, int *flags);
 +#endif
- 
++
  /*
   * access() needs to use the real uid/gid, not the effective uid/gid.
-@@ -373,7 +375,10 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+  * We do this by temporarily clearing all FS-related capabilities and
+@@ -370,6 +377,10 @@
  	int res;
  	unsigned int lookup_flags = LOOKUP_FOLLOW;
  
--        ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-+	#ifdef CONFIG_KSU
++#ifdef CONFIG_KSU_MANUAL_HOOK
 +	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-+	#endif
++#endif
 +
- 
  	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
  		return -EINVAL;
-diff --git a/fs/read_write.c b/fs/read_write.c
-index da16d7ccca12..c9508cfb8290 100644
---- a/fs/read_write.c
-+++ b/fs/read_write.c
-@@ -626,6 +626,12 @@ static inline void file_pos_write(struct file *file, loff_t pos)
+ 
+diff -urN a/fs/read_write.c b/fs/read_write.c
+--- a/fs/read_write.c	2026-07-08 17:14:54.047978000 +0800
++++ b/fs/read_write.c	2026-07-08 17:44:38.591940466 +0800
+@@ -581,11 +581,22 @@
  		file->f_pos = pos;
  }
  
-+#ifdef CONFIG_KSU
-+extern bool ksu_vfs_read_hook __read_mostly;
-+extern int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr,
-+			size_t *count_ptr);
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern bool ksu_init_rc_hook __read_mostly;
++extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,
++				char __user **buf_ptr, size_t *count_ptr);
 +#endif
 +
  SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
  {
  	struct fd f = fdget_pos(fd);
-@@ -633,6 +639,10 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
+ 	ssize_t ret = -EBADF;
  
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	if (unlikely(ksu_init_rc_hook)) 
++		ksu_handle_sys_read(fd, &buf, &count);
++#endif
++
  	if (f.file) {
  		loff_t pos = file_pos_read(f.file);
-+		#ifdef CONFIG_KSU
-+		if (unlikely(ksu_vfs_read_hook)) 
-+			ksu_handle_sys_read(fd, &buf, &count);
-+		#endif
  		ret = vfs_read(f.file, buf, count, &pos);
- 		if (ret >= 0)
- 			file_pos_write(f.file, pos);
-diff --git a/fs/stat.c b/fs/stat.c
-index 777aeaaf8c3d..02c3965f82bf 100644
---- a/fs/stat.c
-+++ b/fs/stat.c
-@@ -87,8 +105,6 @@ int vfs_fstat(unsigned int fd, struct kstat *stat)
- }
- EXPORT_SYMBOL(vfs_fstat);
- 
--extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
--
- int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
- 		int flag)
+diff -urN a/kernel/reboot.c b/kernel/reboot.c
+--- a/kernel/reboot.c	2026-07-08 17:14:55.023978000 +0800
++++ b/kernel/reboot.c	2026-07-08 17:36:59.875950314 +0800
+@@ -277,6 +277,11 @@
+  *
+  * reboot doesn't sync: do that yourself before calling this.
+  */
++ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
++#endif 
++ 
+ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+ 		void __user *, arg)
  {
-@@ -96,7 +112,6 @@ int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
- 	int error = -EINVAL;
- 	unsigned int lookup_flags = 0;
+@@ -284,6 +289,10 @@
+ 	char buffer[256];
+ 	int ret = 0;
  
--        ksu_handle_stat(&dfd, &filename, &flag);
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
++#endif
++
+ 	/* We only trust the superuser with rebooting the system. */
+ 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
+ 		return -EPERM;
+diff -urN a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+--- a/security/selinux/selinuxfs.c	2026-07-08 17:14:55.815978000 +0800
++++ b/security/selinux/selinuxfs.c	2026-07-08 18:06:47.435911938 +0800
+@@ -61,7 +61,7 @@
+ }
+ __setup("checkreqprot=", checkreqprot_setup);
  
- 	if ((flag & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
- 		      AT_EMPTY_PATH)) != 0)
-@@ -291,6 +306,10 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
+-static DEFINE_MUTEX(sel_mutex);
++DEFINE_MUTEX(sel_mutex);
+ 
+ /* global data for booleans */
+ static struct dentry *bool_dir;
+@@ -259,7 +259,7 @@
+ 			       size, vma->vm_page_prot);
+ }
+ 
+-static const struct file_operations sel_handle_status_ops = {
++const struct file_operations sel_handle_status_ops = {
+ 	.open		= sel_open_handle_status,
+ 	.read		= sel_read_handle_status,
+ 	.mmap		= sel_mmap_handle_status,
+@@ -721,7 +721,7 @@
+ static ssize_t sel_write_user(struct file *file, char *buf, size_t size);
+ static ssize_t sel_write_member(struct file *file, char *buf, size_t size);
+ 
+-static ssize_t (*write_op[])(struct file *, char *, size_t) = {
++ssize_t (*write_op[])(struct file *, char *, size_t) = {
+ 	[SEL_ACCESS] = sel_write_access,
+ 	[SEL_CREATE] = sel_write_create,
+ 	[SEL_RELABEL] = sel_write_relabel,
+diff -urN a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+--- a/security/selinux/ss/services.c	2026-07-08 17:14:55.819978000 +0800
++++ b/security/selinux/ss/services.c	2026-07-08 18:05:25.811913690 +0800
+@@ -75,7 +75,7 @@
+ int selinux_policycap_openperm;
+ int selinux_policycap_alwaysnetwork;
+ 
+-static DEFINE_RWLOCK(policy_rwlock);
++DEFINE_RWLOCK(policy_rwlock);
+ 
+ static struct sidtab sidtab;
+ struct policydb policydb;
+diff -urN a/fs/stat.c b/fs/stat.c
+--- a/fs/stat.c	2026-07-08 17:14:54.071978000 +0800
++++ b/fs/stat.c	2026-07-08 17:24:38.983966219 +0800
+@@ -287,6 +287,17 @@
  	return cp_new_stat(&stat, statbuf);
  }
  
-+#ifdef CONFIG_KSU
-+extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot)) 
++extern int ksu_handle_stat(int *dfd, const char __user **filename_user,
++				int *flags);
++
++extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
++#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
++extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr); // optional
++#endif
 +#endif
 +
  #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
  SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  		struct stat __user *, statbuf, int, flag)
-@@ -298,6 +317,10 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+@@ -294,6 +305,10 @@
  	struct kstat stat;
  	int error;
  
-+	#ifdef CONFIG_KSU
++#ifdef CONFIG_KSU_MANUAL_HOOK
 +	ksu_handle_stat(&dfd, &filename, &flag);
-+	#endif
++#endif
 +
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-@@ -440,6 +463,9 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
+@@ -309,6 +324,10 @@
+ 	if (!error)
+ 		error = cp_new_stat(&stat, statbuf);
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_newfstat_ret(&fd, &statbuf);
++#endif
++
+ 	return error;
+ }
+ 
+@@ -427,6 +446,10 @@
+ 	if (!error)
+ 		error = cp_new_stat64(&stat, statbuf);
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK // for 32-bit
++	ksu_handle_fstat64_ret(&fd, &statbuf);
++#endif
++
+ 	return error;
+ }
+ 
+@@ -436,6 +459,10 @@
  	struct kstat stat;
  	int error;
  
-+	#ifdef CONFIG_KSU
-+	ksu_handle_stat(&dfd, &filename, &flag); /* 32-bit su */
-+	#endif
++#ifdef CONFIG_KSU_MANUAL_HOOK // 32-bit su
++	ksu_handle_stat(&dfd, &filename, &flag); 
++#endif
++
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
+diff -urN a/kernel/sys.c b/kernel/sys.c
+--- a/kernel/sys.c	2026-07-08 17:14:55.047978000 +0800
++++ b/kernel/sys.c	2026-07-08 17:42:37.291943070 +0800
+@@ -577,6 +577,9 @@
+ 	return retval;
+ }
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
++#endif
+ 
+ /*
+  * This function implements a generic ability to update ruid, euid,
+@@ -590,6 +593,10 @@
+ 	int retval;
+ 	kuid_t kruid, keuid, ksuid;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++       (void)ksu_handle_setresuid(ruid, euid, suid);
++#endif
++
+ 	kruid = make_kuid(ns, ruid);
+ 	keuid = make_kuid(ns, euid);
+ 	ksuid = make_kuid(ns, suid);
