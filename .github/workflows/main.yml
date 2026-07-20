@@ -25,5 +25,5 @@ jobs:
           ksu: true
           ksu-other: true
           ksu-version: main
-          ksu-url: https://github.com/ReSukiSU/ReSukiSU
+          ksu-url: https://github.com/rsuntk/KernelSU
           anykernel3: true
