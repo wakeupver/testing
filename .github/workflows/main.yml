@@ -15,7 +15,7 @@ jobs:
         with:
           kernel-url: https://github.com/LineageOS/android_kernel_xiaomi_sdm845
           kernel-branch: lineage-22.2
-          config: vendor/xiaomi/beryllium_defconfig
+          config: vendor/xiaomi/beryllium.config
           arch: arm64
           aosp-gcc: true
           aosp-clang: false
