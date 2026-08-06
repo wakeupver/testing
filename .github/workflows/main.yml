@@ -13,7 +13,7 @@ jobs:
       - name: Build
         uses: wakeupver/kernel_build_action@main
         with:
-          kernel-url: https://github.com/LineageOS/android_kernel_xiaomi_sdm845.git
+          kernel-url: https://github.com/LineageOS/android_kernel_xiaomi_sdm845
           kernel-branch: lineage-22.2
           config: vendor/xiaomi/beryllium_defconfig
           arch: arm64
