@@ -24,6 +24,6 @@ jobs:
           other-clang-branch: master
           ksu: true
           ksu-other: true
-          ksu-version: main
+          ksu-version: master
           ksu-url: https://github.com/backslashxx/KernelSU
           anykernel3: true
