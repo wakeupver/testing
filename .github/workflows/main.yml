@@ -15,7 +15,7 @@ jobs:
         with:
           kernel-url: https://github.com/wakeupver/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
-          config: vendor/xiaomi/slivercore_defconfig
+          config: vendor/xiaomi/silvercore_defconfig
           arch: arm64
           aosp-gcc: true
           aosp-clang: false
