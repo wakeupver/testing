@@ -28,4 +28,3 @@ jobs:
           ksu-url: https://github.com/backslashxx/KernelSU
           anykernel3: true
           disable-lto: true
-          nomount: true
