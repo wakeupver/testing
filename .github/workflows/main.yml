@@ -11,9 +11,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Build
-        uses: wakeupver/kernel_build_action@main
+        uses: dabao1955/kernel_build_action@main
         with:
-          kernel-url: https://github.com/wakeupver/android_kernel_xiaomi_sdm845
+          kernel-url: https://github.com/PainKiller3/android_kernel_xiaomi_sdm845
           kernel-branch: thirteen
           config: vendor/xiaomi/silvercore_defconfig
           arch: arm64
@@ -27,3 +27,5 @@ jobs:
           ksu-version: master
           ksu-url: https://github.com/backslashxx/KernelSU
           anykernel3: true
+          disable-lto: true
+          nomount: true
